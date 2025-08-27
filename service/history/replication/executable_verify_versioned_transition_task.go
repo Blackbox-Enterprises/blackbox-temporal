@@ -10,6 +10,7 @@ import (
 	historyspb "go.temporal.io/server/api/history/v1"
 	persistencespb "go.temporal.io/server/api/persistence/v1"
 	replicationspb "go.temporal.io/server/api/replication/v1"
+	"go.temporal.io/server/chasm"
 	common2 "go.temporal.io/server/common"
 	"go.temporal.io/server/common/definition"
 	"go.temporal.io/server/common/headers"
@@ -118,7 +119,14 @@ func (e *ExecutableVerifyVersionedTransitionTask) Execute() error {
 
 	transitionHistory := ms.GetExecutionInfo().TransitionHistory
 	if len(transitionHistory) == 0 {
-		return nil
+		return serviceerrors.NewSyncState(
+			"mutable state is not up to date",
+			e.NamespaceID,
+			e.WorkflowID,
+			e.RunID,
+			nil,
+			ms.GetExecutionInfo().VersionHistories,
+		)
 	}
 	err = transitionhistory.StalenessCheck(transitionHistory, e.ReplicationTask().VersionedTransition)
 
@@ -209,7 +217,7 @@ func (e *ExecutableVerifyVersionedTransitionTask) getMutableState(ctx context.Co
 	if err != nil {
 		return nil, err
 	}
-	wfContext, release, err := e.WorkflowCache.GetOrCreateWorkflowExecution(
+	wfContext, release, err := e.WorkflowCache.GetOrCreateChasmEntity(
 		ctx,
 		shardContext,
 		namespace.ID(e.NamespaceID),
@@ -217,6 +225,7 @@ func (e *ExecutableVerifyVersionedTransitionTask) getMutableState(ctx context.Co
 			WorkflowId: e.WorkflowID,
 			RunId:      runId,
 		},
+		chasm.ArchetypeAny,
 		locks.PriorityLow,
 	)
 	if err != nil {

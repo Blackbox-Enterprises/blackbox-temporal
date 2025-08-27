@@ -7,6 +7,7 @@ import (
 	"go.temporal.io/api/serviceerror"
 	persistencespb "go.temporal.io/server/api/persistence/v1"
 	"go.temporal.io/server/chasm"
+	chasmworkflow "go.temporal.io/server/chasm/lib/workflow"
 	historyi "go.temporal.io/server/service/history/interfaces"
 )
 
@@ -46,8 +47,8 @@ func (*noopChasmTree) Terminate(chasm.TerminateComponentRequest) error {
 	return nil
 }
 
-func (*noopChasmTree) Archetype() string {
-	return ""
+func (*noopChasmTree) Archetype() chasm.Archetype {
+	return chasmworkflow.Archetype
 }
 
 func (*noopChasmTree) EachPureTask(
@@ -65,6 +66,10 @@ func (*noopChasmTree) Component(chasm.Context, chasm.ComponentRef) (chasm.Compon
 	return nil, serviceerror.NewInternal("Component() method invoked on noop CHASM tree")
 }
 
+func (*noopChasmTree) ComponentByPath(chasm.Context, string) (chasm.Component, error) {
+	return nil, serviceerror.NewInternal("ComponentByPath() method invoked on noop CHASM tree")
+}
+
 func (*noopChasmTree) ExecuteSideEffectTask(
 	ctx context.Context,
 	registry *chasm.Registry,
@@ -78,7 +83,6 @@ func (*noopChasmTree) ExecuteSideEffectTask(
 
 func (*noopChasmTree) ValidateSideEffectTask(
 	ctx context.Context,
-	registry *chasm.Registry,
 	taskAttributes chasm.TaskAttributes,
 	taskInfo *persistencespb.ChasmTaskInfo,
 ) (any, error) {

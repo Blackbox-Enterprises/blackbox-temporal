@@ -10,6 +10,7 @@ import (
 	"go.temporal.io/server/common/debug"
 	"go.temporal.io/server/common/primitives"
 	"go.temporal.io/server/common/retrypolicy"
+	"go.temporal.io/server/service/matching/counter"
 )
 
 var (
@@ -189,8 +190,8 @@ config as the other services.`,
 	)
 	EnableEagerWorkflowStart = NewNamespaceBoolSetting(
 		"system.enableEagerWorkflowStart",
-		false,
-		`EnableEagerWorkflowStart toggles "eager workflow start" - returning the first workflow task inline in the
+		true,
+		`Toggles "eager workflow start" - returning the first workflow task inline in the
 response to a StartWorkflowExecution request and skipping the trip through matching.`,
 	)
 	NamespaceCacheRefreshInterval = NewGlobalDurationSetting(
@@ -549,11 +550,13 @@ is currently processing a task.
 	)
 
 	// keys for frontend
-	FrontendHTTPAllowedHosts = NewGlobalTypedSetting(
+	FrontendHTTPAllowedHosts = NewGlobalTypedSettingWithConverter(
 		"frontend.httpAllowedHosts",
-		[]string(nil),
+		ConvertWildcardStringListToRegexp,
+		MatchAnythingRE,
 		`HTTP API Requests with a "Host" header matching the allowed hosts will be processed, otherwise rejected.
-Wildcards (*) are expanded to allow any substring. By default any Host header is allowed.`,
+Wildcards (*) are expanded to allow any substring. By default any Host header is allowed.
+Concrete type should be list of strings.`,
 	)
 	FrontendPersistenceMaxQPS = NewGlobalIntSetting(
 		"frontend.persistenceMaxQPS",
@@ -890,11 +893,22 @@ used when the first cache layer has a miss. Requires server restart for change t
 		`The TTL of the Nexus endpoint registry's readthrough LRU cache - the cache is a secondary cache and is only
 used when the first cache layer has a miss. Requires server restart for change to be applied.`,
 	)
-	FrontendNexusRequestHeadersBlacklist = NewGlobalTypedSetting(
+	FrontendNexusRequestHeadersBlacklist = NewGlobalTypedSettingWithConverter(
 		"frontend.nexusRequestHeadersBlacklist",
-		[]string(nil),
+		ConvertWildcardStringListToRegexp,
+		MatchNothingRE,
 		`Nexus request headers to be removed before being sent to a user handler.
-Wildcards (*) are expanded to allow any substring. By default blacklist is empty.`,
+Wildcards (*) are expanded to allow any substring. By default blacklist is empty.
+Concrete type should be list of strings.`,
+	)
+	FrontendNexusForwardRequestUseEndpointDispatch = NewGlobalBoolSetting(
+		"frontend.nexusForwardRequestUseEndpointDispatch",
+		false,
+		`!EXPERIMENTAL! NB: This config will be removed in a future release. Controls whether to use Nexus 
+task dispatch by endpoint URLs for forwarded Nexus requests. If set to true, forwarded requests will use the same 
+dispatch type (by endpoint or by namespace + task queue) as the original request. If false, dispatch by namespace + task
+queue will always be used for forwarded requests. Defaults to false because Nexus endpoints do not support replication, 
+so forwarding by endpoint ID will not work out of the box.`,
 	)
 	FrontendCallbackURLMaxLength = NewNamespaceIntSetting(
 		"frontend.callbackURLMaxLength",
@@ -1287,6 +1301,11 @@ second per poller by one physical queue manager`,
 		false,
 		`Use priority-enabled TaskMatcher`,
 	)
+	MatchingEnableFairness = NewTaskQueueBoolSetting(
+		"matching.enableFairness",
+		false,
+		`Enable fairness for task dispatching. Implies matching.useNewMatcher.`,
+	)
 	MatchingPriorityLevels = NewTaskQueueIntSetting(
 		"matching.priorityLevels",
 		5,
@@ -1296,6 +1315,16 @@ second per poller by one physical queue manager`,
 		"matching.backlogTaskForwardTimeout",
 		60*time.Second,
 		`Timeout for forwarded backlog task (requires new matcher)`,
+	)
+	MatchingFairnessCounter = NewTaskQueueTypedSetting(
+		"matching.fairnessCounter",
+		counter.DefaultCounterParams,
+		`Configuration for counter used in matching fairness.`,
+	)
+	MatchingFairnessKeyRateLimitCacheSize = NewTaskQueueIntSetting(
+		"matching.fairnessKeyRateLimitCacheSize",
+		2000,
+		"Cache size for fairness key rate limits.",
 	)
 
 	// keys for history
@@ -1383,6 +1412,11 @@ will wait on workflow lock acquisition. Requires service restart to take effect.
 		256000*4*1024,
 		`HistoryCacheHostLevelMaxSizeBytes is the maximum size of the host level history cache. This is only used if
 HistoryCacheSizeBasedLimit is set to true.`,
+	)
+	HistoryCacheBackgroundEvict = NewGlobalTypedSetting(
+		"history.cacheBackgroundEvict",
+		DefaultHistoryCacheBackgroundEvictSettings,
+		`HistoryCacheBackgroundEvict configures background processing to purge expired entries from the history cache.`,
 	)
 	EnableWorkflowExecutionTimeoutTimer = NewGlobalBoolSetting(
 		"history.enableWorkflowExecutionTimeoutTimer",
@@ -2356,11 +2390,6 @@ that task will be sent to DLQ.`,
 		false,
 		`EnableReplicationTaskBatching is a feature flag for batching replicate history event task`,
 	)
-	EnableReplicateLocalGeneratedEvents = NewGlobalBoolSetting(
-		"history.EnableReplicateLocalGeneratedEvents",
-		false,
-		`EnableReplicateLocalGeneratedEvents is a feature flag for replicating locally generated events`,
-	)
 	EnableReplicationTaskTieredProcessing = NewGlobalBoolSetting(
 		"history.EnableReplicationTaskTieredProcessing",
 		false,
@@ -2593,7 +2622,8 @@ Should be at least WorkerESProcessorFlushInterval+<time to process request>.`,
 	ExecutionsScannerEnabled = NewGlobalBoolSetting(
 		"worker.executionsScannerEnabled",
 		false,
-		`ExecutionsScannerEnabled indicates if executions scanner should be started as part of worker.Scanner`,
+		`ExecutionsScannerEnabled indicates if executions scanner should be started as part of worker.Scanner. This flag has no effect when SQL persistence is used, 
+because executions scanner support for SQL is not yet implemented.`,
 	)
 	HistoryScannerDataMinAge = NewGlobalDurationSetting(
 		"worker.historyScannerDataMinAge",
@@ -2687,6 +2717,11 @@ Valid fields: MaxConcurrentActivityExecutionSize, TaskQueueActivitiesPerSecond,
 WorkerActivitiesPerSecond, MaxConcurrentActivityTaskPollers.
 `,
 	)
+	WorkerGenerateMigrationTaskViaFrontend = NewGlobalBoolSetting(
+		"worker.generateMigrationTaskViaFrontend",
+		false,
+		`WorkerGenerateMigrationTaskViaFrontend controls whether to generate migration tasks via frontend admin service.`,
+	)
 	MaxUserMetadataSummarySize = NewNamespaceIntSetting(
 		"limit.userMetadataSummarySize",
 		400,
@@ -2732,5 +2767,11 @@ WorkerActivitiesPerSecond, MaxConcurrentActivityTaskPollers.
 		"frontend.ListWorkersEnabled",
 		false,
 		`ListWorkersEnabled is a "feature enable" flag. It allows clients to get workers heartbeat information.`,
+	)
+
+	WorkerCommandsEnabled = NewNamespaceBoolSetting(
+		"frontend.WorkerCommandsEnabled",
+		false,
+		`WorkerCommandsEnabled is a "feature enable" flag. It allows clients to send commands to the workers.`,
 	)
 )

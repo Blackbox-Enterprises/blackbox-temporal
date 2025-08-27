@@ -44,6 +44,10 @@ const (
 
 	InvalidHistoryURITagValue    = "invalid_history_uri"
 	InvalidVisibilityURITagValue = "invalid_visibility_uri"
+
+	ActiveNamespaceStateTagValue  = "active"
+	PassiveNamespaceStateTagValue = "passive"
+	UnknownNamespaceStateTagValue = "unknown"
 )
 
 // Admin Client Operations
@@ -549,6 +553,7 @@ const (
 	TaskTypeVisibilityTaskUpsertExecution                 = "VisibilityTaskUpsertExecution"
 	TaskTypeVisibilityTaskCloseExecution                  = "VisibilityTaskCloseExecution"
 	TaskTypeVisibilityTaskDeleteExecution                 = "VisibilityTaskDeleteExecution"
+	TaskTypeVisibilityTaskUpsertChasmExecution            = "VisibilityTaskUpsertChasmExecution"
 	TaskTypeArchivalTaskArchiveExecution                  = "ArchivalTaskArchiveExecution"
 	TaskTypeTimerActiveTaskActivityTimeout                = "TimerActiveTaskActivityTimeout"
 	TaskTypeTimerActiveTaskWorkflowTaskTimeout            = "TimerActiveTaskWorkflowTaskTimeout"
@@ -921,6 +926,7 @@ var (
 	WorkflowTimeoutCount                  = NewCounterDef("workflow_timeout")
 	WorkflowTerminateCount                = NewCounterDef("workflow_terminate")
 	WorkflowContinuedAsNewCount           = NewCounterDef("workflow_continued_as_new")
+	WorkflowDuration                      = NewTimerDef("workflow_duration")
 	ReplicationStreamPanic                = NewCounterDef("replication_stream_panic")
 	ReplicationStreamError                = NewCounterDef("replication_stream_error")
 	ReplicationServiceError               = NewCounterDef("replication_service_error")
@@ -1055,7 +1061,16 @@ var (
 	ApproximateBacklogAgeSeconds           = NewGaugeDef("approximate_backlog_age_seconds")
 	NonRetryableTasks                      = NewCounterDef(
 		"non_retryable_tasks",
-		WithDescription("The number of non-retryable matching tasks which are dropped due to specific errors"))
+		WithDescription("The number of non-retryable matching tasks which are dropped due to specific errors"),
+	)
+	TaskCompletedMissing = NewCounterDef(
+		"task_completed_dropped",
+		WithDescription("Count of tasks that were completed after being dropped from the matcher"),
+	)
+	TaskRetryTransient = NewCounterDef(
+		"task_retry_transient",
+		WithDescription("Count of tasks that hit a transient error during match or forward and are retried immediately"),
+	)
 
 	// Versioning and Reachability
 	ReachabilityExitPointCounter = NewCounterDef("reachability_exit_point_count")

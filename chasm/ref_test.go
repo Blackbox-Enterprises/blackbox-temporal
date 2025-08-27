@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	persistencespb "go.temporal.io/server/api/persistence/v1"
+	"go.temporal.io/server/common/log"
 	"go.temporal.io/server/common/testing/protorequire"
 	"go.temporal.io/server/common/testing/testvars"
 	"go.uber.org/mock/gomock"
@@ -33,7 +34,7 @@ func (s *componentRefSuite) SetupTest() {
 
 	s.controller = gomock.NewController(s.T())
 
-	s.registry = NewRegistry()
+	s.registry = NewRegistry(log.NewTestLogger())
 	err := s.registry.Register(newTestLibrary(s.controller))
 	s.NoError(err)
 }
@@ -53,7 +54,7 @@ func (s *componentRefSuite) TestArchetype() {
 	rc, ok := s.registry.ComponentOf(reflect.TypeFor[*TestComponent]())
 	s.True(ok)
 
-	s.Equal(rc.FqType(), archetype)
+	s.Equal(rc.FqType(), archetype.String())
 }
 
 func (s *componentRefSuite) TestShardingKey() {
@@ -106,7 +107,7 @@ func (s *componentRefSuite) TestSerializeDeserialize() {
 
 	rootRc, ok := s.registry.ComponentFor(&TestComponent{})
 	s.True(ok)
-	s.Equal(rootRc.FqType(), deserializedRef.archetype)
+	s.Equal(rootRc.FqType(), deserializedRef.archetype.String())
 
 	s.Equal(ref.EntityKey, deserializedRef.EntityKey)
 	s.Equal(ref.componentPath, deserializedRef.componentPath)

@@ -30,7 +30,6 @@ import (
 	"go.temporal.io/server/common/quotas/calculator"
 	"go.temporal.io/server/common/resolver"
 	"go.temporal.io/server/common/resource"
-	"go.temporal.io/server/common/rpc"
 	"go.temporal.io/server/common/rpc/encryption"
 	"go.temporal.io/server/common/rpc/interceptor"
 	"go.temporal.io/server/common/sdk"
@@ -239,7 +238,7 @@ func GrpcServerOptionsProvider(
 		// Service Error Interceptor should be the next most outer interceptor on error handling
 		maskInternalErrorDetailsInterceptor.Intercept,
 		interceptor.ServiceErrorInterceptor,
-		rpc.NewFrontendServiceErrorInterceptor(logger),
+		interceptor.NewFrontendServiceErrorInterceptor(logger),
 		namespaceValidatorInterceptor.NamespaceValidateIntercept,
 		namespaceLogInterceptor.Intercept, // TODO: Deprecate this with a outer custom interceptor
 		metrics.NewServerMetricsContextInjectorInterceptor(),
@@ -601,6 +600,7 @@ func AdminHandlerProvider(
 	logger log.SnTaggedLogger,
 	namespaceReplicationQueue persistence.NamespaceReplicationQueue,
 	taskManager persistence.TaskManager,
+	fairTaskManager persistence.FairTaskManager,
 	persistenceExecutionManager persistence.ExecutionManager,
 	clusterMetadataManager persistence.ClusterMetadataManager,
 	persistenceMetadataManager persistence.MetadataManager,
@@ -630,6 +630,7 @@ func AdminHandlerProvider(
 		visibilityMgr,
 		logger,
 		taskManager,
+		fairTaskManager,
 		persistenceExecutionManager,
 		clusterMetadataManager,
 		persistenceMetadataManager,

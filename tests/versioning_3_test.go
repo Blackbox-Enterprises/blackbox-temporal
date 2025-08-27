@@ -42,6 +42,7 @@ import (
 	"go.temporal.io/server/common/tqid"
 	"go.temporal.io/server/common/worker_versioning"
 	"go.temporal.io/server/service/matching"
+	"go.temporal.io/server/service/worker/workerdeployment"
 	"go.temporal.io/server/tests/testcore"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -818,7 +819,7 @@ func (s *Versioning3Suite) testUnpinnedWorkflowWithRamp(toUnversioned bool) {
 
 	w1 := worker.New(s.SdkClient(), tv1.TaskQueue().GetName(), worker.Options{
 		DeploymentOptions: worker.DeploymentOptions{
-			Version:                   tv1.DeploymentVersionString(),
+			Version:                   tv1.SDKDeploymentVersion(),
 			UseVersioning:             true,
 			DefaultVersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
 		},
@@ -840,16 +841,15 @@ func (s *Versioning3Suite) testUnpinnedWorkflowWithRamp(toUnversioned bool) {
 	// wait until all task queue partitions know that tv1 is current
 	s.waitForDeploymentDataPropagation(tv1, versionStatusCurrent, false, tqTypeWf, tqTypeAct)
 
+	deploymentOpts := worker.DeploymentOptions{
+		Version: tv2.SDKDeploymentVersion(),
+	}
+	if !toUnversioned {
+		deploymentOpts.UseVersioning = true
+		deploymentOpts.DefaultVersioningBehavior = workflow.VersioningBehaviorAutoUpgrade
+	}
 	w2 := worker.New(s.SdkClient(), tv2.TaskQueue().GetName(), worker.Options{
-		DeploymentOptions: worker.DeploymentOptions{
-			Version:       tv2.DeploymentVersionString(),
-			UseVersioning: !toUnversioned,
-			// We are passing default behavior even for unversioned because SDK accepts it
-			// for now. Later SDK will stop accepting such config and this test should be fixed
-			// to not pass this value. The reason we pass it is to ensure server does not get
-			// confused by the conflicting wft completion response until the SDK fix comes.
-			DefaultVersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
-		},
+		DeploymentOptions:                deploymentOpts,
 		MaxConcurrentWorkflowTaskPollers: numPollers,
 	})
 	w2.RegisterWorkflowWithOptions(wf2, workflow.RegisterOptions{Name: "wf"})
@@ -1385,16 +1385,8 @@ func (s *Versioning3Suite) testChildWorkflowInheritance_ExpectInherit(crossTq bo
 	tv2Child := tv1Child.WithBuildIDNumber(2)
 
 	var override *workflowpb.VersioningOverride
-	var sdkOverride sdkclient.VersioningOverride
 	if withOverride {
 		override = tv1.VersioningOverridePinned(s.useV32)
-		sdkOverride = sdkclient.VersioningOverride{
-			Behavior: workflow.VersioningBehaviorPinned,
-			Deployment: sdkclient.Deployment{
-				SeriesName: tv1.DeploymentSeries(),
-				BuildID:    tv1.BuildID(),
-			},
-		}
 	}
 
 	// This is the registered behavior which can be unpinned, but only if withOverride. We want
@@ -1434,7 +1426,7 @@ func (s *Versioning3Suite) testChildWorkflowInheritance_ExpectInherit(crossTq bo
 	if crossTq {
 		w1xtq := worker.New(s.SdkClient(), tv1Child.TaskQueue().GetName(), worker.Options{
 			DeploymentOptions: worker.DeploymentOptions{
-				Version:                   tv1Child.DeploymentVersionString(),
+				Version:                   tv1Child.SDKDeploymentVersion(),
 				UseVersioning:             true,
 				DefaultVersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
 			},
@@ -1447,7 +1439,7 @@ func (s *Versioning3Suite) testChildWorkflowInheritance_ExpectInherit(crossTq bo
 
 	w1 := worker.New(s.SdkClient(), tv1.TaskQueue().GetName(), worker.Options{
 		DeploymentOptions: worker.DeploymentOptions{
-			Version:                   tv1.DeploymentVersionString(),
+			Version:                   tv1.SDKDeploymentVersion(),
 			UseVersioning:             true,
 			DefaultVersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
 		},
@@ -1463,12 +1455,18 @@ func (s *Versioning3Suite) testChildWorkflowInheritance_ExpectInherit(crossTq bo
 	// v1 is current for both parent and child
 	s.setCurrentDeployment(tv1)
 
-	run, err := s.SdkClient().ExecuteWorkflow(ctx, sdkclient.StartWorkflowOptions{
+	startOpts := sdkclient.StartWorkflowOptions{
 		ID:                  tv1.WorkflowID(),
 		TaskQueue:           tv1.TaskQueue().GetName(),
-		VersioningOverride:  sdkOverride,
+		VersioningOverride:  nil,
 		WorkflowTaskTimeout: 10 * time.Second,
-	}, "wf")
+	}
+	if withOverride {
+		startOpts.VersioningOverride = &sdkclient.PinnedVersioningOverride{
+			Version: tv1.SDKDeploymentVersion(),
+		}
+	}
+	run, err := s.SdkClient().ExecuteWorkflow(ctx, startOpts, "wf")
 	s.NoError(err)
 	// wait for it to start on v1
 	s.WaitForChannel(ctx, wfStarted)
@@ -1569,7 +1567,7 @@ func (s *Versioning3Suite) testChildWorkflowInheritance_ExpectNoInherit(crossTq 
 
 	w1 := worker.New(sdkClient, tv1.TaskQueue().GetName(), worker.Options{
 		DeploymentOptions: worker.DeploymentOptions{
-			Version:                   tv1.DeploymentVersionString(),
+			Version:                   tv1.SDKDeploymentVersion(),
 			UseVersioning:             true,
 			DefaultVersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
 		},
@@ -1590,7 +1588,7 @@ func (s *Versioning3Suite) testChildWorkflowInheritance_ExpectNoInherit(crossTq 
 	if crossTq {
 		w2xtq := worker.New(sdkClient, tv2Child.TaskQueue().GetName(), worker.Options{
 			DeploymentOptions: worker.DeploymentOptions{
-				Version:                   tv2Child.DeploymentVersionString(),
+				Version:                   tv2Child.SDKDeploymentVersion(),
 				UseVersioning:             true,
 				DefaultVersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
 			},
@@ -1602,7 +1600,7 @@ func (s *Versioning3Suite) testChildWorkflowInheritance_ExpectNoInherit(crossTq 
 	}
 	w2 := worker.New(sdkClient, tv2.TaskQueue().GetName(), worker.Options{
 		DeploymentOptions: worker.DeploymentOptions{
-			Version:                   tv2.DeploymentVersionString(),
+			Version:                   tv2.SDKDeploymentVersion(),
 			UseVersioning:             true,
 			DefaultVersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
 		},
@@ -1708,7 +1706,7 @@ func (s *Versioning3Suite) testCan(crossTq bool, behavior enumspb.VersioningBeha
 	if crossTq && expectInherit {
 		w1xtq := worker.New(sdkClient, canxTq, worker.Options{
 			DeploymentOptions: worker.DeploymentOptions{
-				Version:                   tv1.DeploymentVersionString(),
+				Version:                   tv1.SDKDeploymentVersion(),
 				UseVersioning:             true,
 				DefaultVersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
 			},
@@ -1721,7 +1719,7 @@ func (s *Versioning3Suite) testCan(crossTq bool, behavior enumspb.VersioningBeha
 	w1 := worker.New(sdkClient, tv1.TaskQueue().GetName(), worker.Options{
 		DeploymentOptions: worker.DeploymentOptions{
 			UseVersioning:             true,
-			Version:                   tv1.DeploymentVersionString(),
+			Version:                   tv1.SDKDeploymentVersion(),
 			DefaultVersioningBehavior: workflow.VersioningBehaviorPinned,
 		},
 		MaxConcurrentWorkflowTaskPollers: numPollers,
@@ -1735,7 +1733,7 @@ func (s *Versioning3Suite) testCan(crossTq bool, behavior enumspb.VersioningBeha
 	if crossTq {
 		w2xtq := worker.New(sdkClient, canxTq, worker.Options{
 			DeploymentOptions: worker.DeploymentOptions{
-				Version:                   tv2.DeploymentVersionString(),
+				Version:                   tv2.SDKDeploymentVersion(),
 				UseVersioning:             true,
 				DefaultVersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
 			},
@@ -1748,7 +1746,7 @@ func (s *Versioning3Suite) testCan(crossTq bool, behavior enumspb.VersioningBeha
 	w2 := worker.New(sdkClient, tv2.TaskQueue().GetName(), worker.Options{
 		DeploymentOptions: worker.DeploymentOptions{
 			UseVersioning:             true,
-			Version:                   tv2.DeploymentVersionString(),
+			Version:                   tv2.SDKDeploymentVersion(),
 			DefaultVersioningBehavior: workflow.VersioningBehaviorPinned,
 		},
 		MaxConcurrentWorkflowTaskPollers: numPollers,
@@ -1968,7 +1966,7 @@ func (s *Versioning3Suite) setCurrentDeployment(tv *testvars.TestVars) {
 		}
 		_, err := s.FrontendClient().SetWorkerDeploymentCurrentVersion(ctx, req)
 		var notFound *serviceerror.NotFound
-		if errors.As(err, &notFound) {
+		if errors.As(err, &notFound) || errors.Is(err, serviceerror.NewFailedPrecondition(workerdeployment.ErrCurrentVersionDoesNotHaveAllTaskQueues)) {
 			return false
 		}
 		s.NoError(err)
@@ -2021,7 +2019,7 @@ func (s *Versioning3Suite) setRampingDeployment(
 		}
 		_, err := s.FrontendClient().SetWorkerDeploymentRampingVersion(ctx, req)
 		var notFound *serviceerror.NotFound
-		if errors.As(err, &notFound) {
+		if errors.As(err, &notFound) || errors.Is(err, serviceerror.NewFailedPrecondition(workerdeployment.ErrRampingVersionDoesNotHaveAllTaskQueues)) {
 			return false
 		}
 		s.NoError(err)

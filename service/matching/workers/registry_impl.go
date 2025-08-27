@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"go.temporal.io/api/serviceerror"
 	workerpb "go.temporal.io/api/worker/v1"
 	"go.temporal.io/server/common/namespace"
 	"go.uber.org/fx"
@@ -58,14 +59,14 @@ func newBucket() *bucket {
 	}
 }
 
-// upsertHeartbeat inserts or refreshes a WorkerHeartbeat under the given namespace.
-// Returns true if a brand-new entry was created.
-func (b *bucket) upsertHeartbeat(nsID namespace.ID, hb *workerpb.WorkerHeartbeat) bool {
+// upsertHeartbeats inserts or refreshes a WorkerHeartbeat under the given namespace.
+// Returns the number of new entries.
+func (b *bucket) upsertHeartbeats(nsID namespace.ID, heartbeats []*workerpb.WorkerHeartbeat) int64 {
 	now := time.Now()
-	key := hb.WorkerInstanceKey
 
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	var newEntries int64
 
 	mp, ok := b.namespaces[nsID]
 	if !ok {
@@ -73,21 +74,25 @@ func (b *bucket) upsertHeartbeat(nsID namespace.ID, hb *workerpb.WorkerHeartbeat
 		b.namespaces[nsID] = mp
 	}
 
-	if e, exists := mp[key]; exists {
-		e.hb = hb
-		e.lastSeen = now
-		b.order.MoveToBack(e.elem)
-		return false
+	for _, hb := range heartbeats {
+		key := hb.WorkerInstanceKey
+		if e, exists := mp[key]; exists {
+			e.hb = hb
+			e.lastSeen = now
+			b.order.MoveToBack(e.elem)
+		} else {
+			e = &entry{
+				nsID:     nsID,
+				hb:       hb,
+				lastSeen: now,
+			}
+			e.elem = b.order.PushBack(e)
+			mp[key] = e
+			newEntries += 1
+		}
 	}
 
-	e := &entry{
-		nsID:     nsID,
-		hb:       hb,
-		lastSeen: now,
-	}
-	e.elem = b.order.PushBack(e)
-	mp[key] = e
-	return true
+	return newEntries
 }
 
 // filterWorkers returns all WorkerHeartbeats in a namespace
@@ -110,6 +115,23 @@ func (b *bucket) filterWorkers(
 		}
 	}
 	return out
+}
+
+func (b *bucket) getWorkerHeartbeat(nsID namespace.ID, workerInstanceKey string) (*workerpb.WorkerHeartbeat, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	mp, ok := b.namespaces[nsID]
+	if !ok {
+		return nil, serviceerror.NewNamespaceNotFound(nsID.String())
+	}
+
+	e, exists := mp[workerInstanceKey]
+	if !exists {
+		return nil, serviceerror.NewNotFoundf("Worker %s not found", workerInstanceKey)
+	}
+
+	return e.hb, nil
 }
 
 // evictByTTL removes entries older than expireBefore from this bucket.
@@ -202,11 +224,10 @@ func (m *registryImpl) getBucket(nsID namespace.ID) *bucket {
 
 // upsertHeartbeat records or refreshes a WorkerHeartbeat under the given namespace.
 // New entries increment the global counter.
-func (m *registryImpl) upsertHeartbeat(nsID namespace.ID, hb *workerpb.WorkerHeartbeat) {
+func (m *registryImpl) upsertHeartbeats(nsID namespace.ID, heartbeats []*workerpb.WorkerHeartbeat) {
 	b := m.getBucket(nsID)
-	if newEntry := b.upsertHeartbeat(nsID, hb); newEntry {
-		m.total.Add(1)
-	}
+	newEntries := b.upsertHeartbeats(nsID, heartbeats)
+	m.total.Add(newEntries)
 }
 
 // filterWorkers returns all WorkerHeartbeats in a namespace
@@ -221,7 +242,6 @@ func (m *registryImpl) filterWorkers(
 		return nil
 	}
 	return b.filterWorkers(nsID, predicate)
-
 }
 
 // evictLoop periodically triggers TTL and capacity-based eviction.
@@ -281,22 +301,31 @@ func (m *registryImpl) Stop() {
 	close(m.quit)
 }
 
-func (m *registryImpl) RecordWorkerHeartbeat(nsID namespace.ID, workerHeartbeat *workerpb.WorkerHeartbeat) {
-	m.upsertHeartbeat(nsID, workerHeartbeat)
+func (m *registryImpl) RecordWorkerHeartbeats(nsID namespace.ID, workerHeartbeat []*workerpb.WorkerHeartbeat) {
+	m.upsertHeartbeats(nsID, workerHeartbeat)
 }
 
 func (m *registryImpl) ListWorkers(nsID namespace.ID, query string, _ []byte) ([]*workerpb.WorkerHeartbeat, error) {
-	predicate := func(_ *workerpb.WorkerHeartbeat) bool { return true }
-	if query != "" {
-		queryEngine, err := newWorkerQueryEngine(nsID.String(), query)
-		if err != nil {
-			return nil, err
-		}
+	if query == "" {
+		return m.filterWorkers(nsID, func(_ *workerpb.WorkerHeartbeat) bool { return true }), nil
+	}
 
-		predicate = func(heartbeat *workerpb.WorkerHeartbeat) bool {
-			result, err := queryEngine.EvaluateWorker(heartbeat)
-			return err == nil && result
-		}
+	queryEngine, err := newWorkerQueryEngine(nsID.String(), query)
+	if err != nil {
+		return nil, err
+	}
+
+	predicate := func(heartbeat *workerpb.WorkerHeartbeat) bool {
+		result, err := queryEngine.EvaluateWorker(heartbeat)
+		return err == nil && result
 	}
 	return m.filterWorkers(nsID, predicate), nil
+}
+
+func (m *registryImpl) DescribeWorker(nsID namespace.ID, workerInstanceKey string) (*workerpb.WorkerHeartbeat, error) {
+	b := m.getBucket(nsID)
+	if b == nil {
+		return nil, serviceerror.NewNotFoundf("namespace not found: %s", nsID.String())
+	}
+	return b.getWorkerHeartbeat(nsID, workerInstanceKey)
 }

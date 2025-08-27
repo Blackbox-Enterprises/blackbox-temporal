@@ -89,6 +89,7 @@ func NewNexusHTTPHandler(
 				forwardingClients:             clientCache,
 				payloadSizeLimit:              serviceConfig.BlobSizeLimitError,
 				headersBlacklist:              serviceConfig.NexusRequestHeadersBlacklist,
+				useForwardByEndpoint:          serviceConfig.NexusForwardRequestUseEndpoint,
 				metricTagConfig:               serviceConfig.NexusOperationsMetricTagConfig,
 				httpTraceProvider:             httpTraceProvider,
 			},
@@ -196,6 +197,13 @@ func (h *NexusHTTPHandler) dispatchNexusTaskByEndpoint(w http.ResponseWriter, r 
 		}
 		switch s.Code() {
 		case codes.NotFound:
+			if r, ok := (err.(interface{ Retryable() bool })); ok {
+				if r.Retryable() {
+					w.Header().Set("nexus-request-retryable", "true")
+				} else {
+					w.Header().Set("nexus-request-retryable", "false")
+				}
+			}
 			h.writeNexusFailure(w, http.StatusNotFound, &nexus.Failure{Message: "nexus endpoint not found"})
 		case codes.DeadlineExceeded:
 			h.writeNexusFailure(w, http.StatusRequestTimeout, &nexus.Failure{Message: "request timed out"})
@@ -262,6 +270,7 @@ func (h *NexusHTTPHandler) nexusContextFromEndpoint(entry *persistencespb.NexusE
 		nc.namespaceName = nsName.String()
 		nc.taskQueue = v.Worker.GetTaskQueue()
 		nc.endpointName = entry.Endpoint.Spec.Name
+		nc.endpointID = entry.Id
 		return nc, true
 	default:
 		h.writeNexusFailure(w, http.StatusBadRequest, &nexus.Failure{Message: "invalid endpoint target"})
@@ -307,6 +316,7 @@ func (h *NexusHTTPHandler) parseTlsAndAuthInfo(r *http.Request, nc *nexusContext
 
 func (h *NexusHTTPHandler) serveResolvedURL(w http.ResponseWriter, r *http.Request, u *url.URL, nc *nexusContext) {
 	// Attach Nexus context to response writer and request context.
+	nc.originalRequestHeaders = r.Header.Clone()
 	w = newNexusHTTPResponseWriter(w, nc)
 	r = r.WithContext(context.WithValue(r.Context(), nexusContextKey{}, nc))
 

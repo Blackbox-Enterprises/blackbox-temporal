@@ -21,6 +21,7 @@ import (
 	historyspb "go.temporal.io/server/api/history/v1"
 	"go.temporal.io/server/api/historyservice/v1"
 	persistencespb "go.temporal.io/server/api/persistence/v1"
+	chasmworkflow "go.temporal.io/server/chasm/lib/workflow"
 	"go.temporal.io/server/common"
 	"go.temporal.io/server/common/collection"
 	"go.temporal.io/server/common/definition"
@@ -136,6 +137,7 @@ func (s *workflowResetterSuite) TestPersistToDB_CurrentTerminated() {
 	}).AnyTimes()
 
 	currentMutableState.EXPECT().GetCurrentVersion().Return(int64(0)).AnyTimes()
+	currentMutableState.EXPECT().IsWorkflow().Return(true).AnyTimes()
 	currentNewEventsSize := int64(3444)
 	currentMutation := &persistence.WorkflowMutation{
 		ExecutionInfo: &persistencespb.WorkflowExecutionInfo{
@@ -200,6 +202,7 @@ func (s *workflowResetterSuite) TestPersistToDB_CurrentTerminated() {
 		util.Ptr(int64(0)),
 		resetSnapshot,
 		resetEventsSeq,
+		true, // isWorkflow
 	).Return(currentNewEventsSize, resetNewEventsSize, nil)
 
 	err := s.workflowResetter.persistToDB(context.Background(), currentWorkflow, currentWorkflow, currentMutation, currentEventsSeq, resetWorkflow)
@@ -225,6 +228,7 @@ func (s *workflowResetterSuite) TestPersistToDB_CurrentNotTerminated() {
 	currentMutation := &persistence.WorkflowMutation{}
 	currentEventsSeq := []*persistence.WorkflowEvents{{}}
 	currentMutableState.EXPECT().GetCurrentVersion().Return(int64(0)).AnyTimes()
+	currentMutableState.EXPECT().IsWorkflow().Return(true).AnyTimes()
 	currentMutableState.EXPECT().CloseTransactionAsMutation(historyi.TransactionPolicyActive).Return(currentMutation, currentEventsSeq, nil)
 
 	resetWorkflow := NewMockWorkflow(s.controller)
@@ -262,6 +266,7 @@ func (s *workflowResetterSuite) TestPersistToDB_CurrentNotTerminated() {
 		util.Ptr(int64(0)),
 		resetSnapshot,
 		resetEventsSeq,
+		true, // isWorkflow
 	).Return(int64(0), int64(0), nil)
 
 	err := s.workflowResetter.persistToDB(context.Background(), currentWorkflow, currentWorkflow, nil, nil, resetWorkflow)
@@ -707,6 +712,7 @@ func (s *workflowResetterSuite) TestReapplyContinueAsNewWorkflowEvents_WithConti
 	resetContext.EXPECT().Lock(gomock.Any(), locks.PriorityHigh).Return(nil)
 	resetContext.EXPECT().Unlock()
 	resetContext.EXPECT().IsDirty().Return(false).AnyTimes()
+	resetContext.EXPECT().SetArchetype(chasmworkflow.Archetype).Times(1)
 	resetMutableState := historyi.NewMockMutableState(s.controller)
 	resetContextCacheKey := wcache.Key{
 		WorkflowKey: definition.NewWorkflowKey(s.namespaceID.String(), s.workflowID, newRunID),

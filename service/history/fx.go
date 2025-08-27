@@ -49,7 +49,7 @@ var Module = fx.Options(
 	events.Module,
 	cache.Module,
 	archival.Module,
-	chasmEngineModule,
+	ChasmEngineModule,
 	fx.Provide(ConfigProvider), // might be worth just using provider for configs.Config directly
 	fx.Provide(workflow.NewCommandHandlerRegistry),
 	fx.Provide(RetryableInterceptorProvider),
@@ -57,6 +57,7 @@ var Module = fx.Options(
 	fx.Provide(RateLimitInterceptorProvider),
 	fx.Provide(HealthSignalAggregatorProvider),
 	fx.Provide(HealthCheckInterceptorProvider),
+	fx.Provide(HistoryAdditionalInterceptorsProvider),
 	fx.Provide(service.GrpcServerOptionsProvider),
 	fx.Provide(ESProcessorConfigProvider),
 	fx.Provide(VisibilityManagerProvider),
@@ -173,7 +174,6 @@ func TelemetryInterceptorProvider(
 
 func HealthSignalAggregatorProvider(
 	dynamicCollection *dynamicconfig.Collection,
-	metricsHandler metrics.Handler,
 	logger log.ThrottledLogger,
 ) interceptor.HealthSignalAggregator {
 	return interceptor.NewHealthSignalAggregator(
@@ -185,13 +185,19 @@ func HealthSignalAggregatorProvider(
 }
 
 func HealthCheckInterceptorProvider(
-	dynamicCollection *dynamicconfig.Collection,
 	healthSignalAggregator interceptor.HealthSignalAggregator,
 ) *interceptor.HealthCheckInterceptor {
 	return interceptor.NewHealthCheckInterceptor(
 		healthSignalAggregator,
 	)
 }
+
+func HistoryAdditionalInterceptorsProvider(
+	healthCheckInterceptor *interceptor.HealthCheckInterceptor,
+) []grpc.UnaryServerInterceptor {
+	return []grpc.UnaryServerInterceptor{healthCheckInterceptor.UnaryIntercept}
+}
+
 func RateLimitInterceptorProvider(
 	serviceConfig *configs.Config,
 ) *interceptor.RateLimitInterceptor {

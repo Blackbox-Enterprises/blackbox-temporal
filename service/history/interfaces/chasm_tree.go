@@ -23,7 +23,7 @@ type ChasmTree interface {
 	IsStateDirty() bool
 	IsDirty() bool
 	Terminate(chasm.TerminateComponentRequest) error
-	Archetype() string
+	Archetype() chasm.Archetype
 	EachPureTask(
 		deadline time.Time,
 		callback func(executor chasm.NodePureTask, taskAttributes chasm.TaskAttributes, task any) error,
@@ -38,10 +38,10 @@ type ChasmTree interface {
 	) error
 	ValidateSideEffectTask(
 		ctx context.Context,
-		registry *chasm.Registry,
 		taskAttributes chasm.TaskAttributes,
 		taskInfo *persistencespb.ChasmTaskInfo,
 	) (any, error)
 	IsStale(chasm.ComponentRef) error
 	Component(chasm.Context, chasm.ComponentRef) (chasm.Component, error)
+	ComponentByPath(chasm.Context, string) (chasm.Component, error)
 }
