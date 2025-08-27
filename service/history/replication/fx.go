@@ -239,7 +239,7 @@ func replicationStreamLowPrioritySchedulerProvider(
 		taskMetricsTagsFn,
 		ctasks.RateLimitedSchedulerOptions{
 			Enabled:          config.ReplicationEnableRateLimit,
-			EnableShadowMode: config.ReplicationEnableRateLimit,
+			EnableShadowMode: config.ReplicationEnableRateLimitShadowMode,
 		},
 		logger,
 		metricsHandler,
