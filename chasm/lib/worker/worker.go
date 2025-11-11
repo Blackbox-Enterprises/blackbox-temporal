@@ -6,20 +6,16 @@ import (
 	"fmt"
 	"time"
 
-	workerpb "go.temporal.io/api/worker/v1"
 	"go.temporal.io/server/chasm"
 	workerstatepb "go.temporal.io/server/chasm/lib/worker/gen/workerpb/v1"
 )
 
 const (
 	Archetype chasm.Archetype = "Worker"
-)
 
-// HeartbeatRequest is the internal request for CHASM component updates
-type HeartbeatRequest struct {
-	WorkerHeartbeat *workerpb.WorkerHeartbeat
-	LeaseDuration   time.Duration
-}
+	// Default duration for worker leases if not specified in the request.
+	defaultLeaseDuration = 1 * time.Minute
+)
 
 // Worker is a Chasm component that tracks worker heartbeats and manages worker lifecycle.
 type Worker struct {
@@ -68,8 +64,15 @@ func (w *Worker) workerID() string {
 }
 
 // recordHeartbeat processes a heartbeat, updating worker state and extending the lease.
-func (w *Worker) recordHeartbeat(ctx chasm.MutableContext, heartbeat *workerpb.WorkerHeartbeat, leaseDuration time.Duration) error {
-	w.WorkerHeartbeat = heartbeat
+func (w *Worker) recordHeartbeat(ctx chasm.MutableContext, req *workerstatepb.RecordHeartbeatRequest) error {
+	// Extract worker heartbeat from request
+	frontendReq := req.GetFrontendRequest()
+	workerHeartbeat := frontendReq.GetWorkerHeartbeat()[0]
+
+	// TODO: Honor the lease duration from the request.
+	leaseDuration := defaultLeaseDuration
+
+	w.WorkerHeartbeat = workerHeartbeat
 
 	// Calculate lease deadline
 	leaseDeadline := ctx.Now(w).Add(leaseDuration)

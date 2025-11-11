@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	workerpb "go.temporal.io/api/worker/v1"
+	workflowservice "go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/server/chasm"
 	workerstatepb "go.temporal.io/server/chasm/lib/worker/gen/workerpb/v1"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -21,18 +22,36 @@ func newTestWorker() *Worker {
 	return worker
 }
 
+// newTestRequest creates a test RecordHeartbeatRequest
+func newTestRequest(workerInstanceKey string) *workerstatepb.RecordHeartbeatRequest {
+	return &workerstatepb.RecordHeartbeatRequest{
+		NamespaceId: "test-namespace-id",
+		FrontendRequest: &workflowservice.RecordWorkerHeartbeatRequest{
+			Namespace: "test-namespace",
+			Identity:  "test-identity",
+			WorkerHeartbeat: []*workerpb.WorkerHeartbeat{
+				{
+					WorkerInstanceKey: workerInstanceKey,
+				},
+			},
+			// LeaseDuration will be available after proto regeneration
+		},
+	}
+}
+
 func TestRecordHeartbeat(t *testing.T) {
 	worker := newTestWorker()
 	ctx := &chasm.MockMutableContext{}
-	leaseDuration := 30 * time.Second
+
+	req := newTestRequest("test-worker")
 
 	// Test successful heartbeat recording
-	err := worker.recordHeartbeat(ctx, worker.WorkerHeartbeat, leaseDuration)
+	err := worker.recordHeartbeat(ctx, req)
 	require.NoError(t, err)
 
-	// Verify lease deadline was set (approximately)
+	// Verify lease deadline was set (approximately, using default 1 minute)
 	require.NotNil(t, worker.LeaseExpirationTime)
-	expectedDeadline := time.Now().Add(leaseDuration)
+	expectedDeadline := time.Now().Add(1 * time.Minute) // Default lease duration
 	actualDeadline := worker.LeaseExpirationTime.AsTime()
 	require.WithinDuration(t, expectedDeadline, actualDeadline, time.Second)
 
@@ -151,13 +170,11 @@ func TestMultipleHeartbeats(t *testing.T) {
 	ctx := &chasm.MockMutableContext{}
 
 	// First heartbeat
-	firstDuration := 30 * time.Second
-	err := worker.recordHeartbeat(ctx, worker.WorkerHeartbeat, firstDuration)
+	err := worker.recordHeartbeat(ctx, newTestRequest("test-worker"))
 	require.NoError(t, err)
 
 	// Second heartbeat extends the lease
-	secondDuration := 60 * time.Second
-	err = worker.recordHeartbeat(ctx, worker.WorkerHeartbeat, secondDuration)
+	err = worker.recordHeartbeat(ctx, newTestRequest("test-worker"))
 	require.NoError(t, err)
 
 	// Verify two tasks were scheduled (one for each heartbeat)
@@ -175,8 +192,7 @@ func TestWorkerResurrection(t *testing.T) {
 		oldCleanupTime := time.Now().Add(60 * time.Minute)
 		worker.CleanupTime = timestamppb.New(oldCleanupTime)
 
-		leaseDuration := 30 * time.Second
-		err := worker.recordHeartbeat(ctx, worker.WorkerHeartbeat, leaseDuration)
+		err := worker.recordHeartbeat(ctx, newTestRequest("test-worker"))
 
 		// Should succeed - worker resurrection handles same identity reconnection
 		require.NoError(t, err)
@@ -232,8 +248,7 @@ func TestInvalidTransitions(t *testing.T) {
 		worker := newTestWorker()
 		worker.Status = workerstatepb.WORKER_STATUS_CLEANED_UP
 
-		leaseDuration := 30 * time.Second
-		err := worker.recordHeartbeat(ctx, worker.WorkerHeartbeat, leaseDuration)
+		err := worker.recordHeartbeat(ctx, newTestRequest("test-worker"))
 
 		// Should fail because worker is cleaned up (terminal state)
 		require.Error(t, err)
