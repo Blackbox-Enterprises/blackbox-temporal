@@ -80,7 +80,7 @@ func (c *WorkerServiceLayeredClient) callRecordHeartbeatNoRetry(
 		}
 		metrics.ClientLatency.With(metricsHandler).Record(time.Since(startTime))
 	}()
-	shardID := common.WorkflowIDToHistoryShard(request.GetNamespaceId(), request.GetWorkerHeartbeat().GetWorkerInstanceKey(), c.numShards)
+	shardID := common.WorkflowIDToHistoryShard(request.GetNamespaceId(), request.GetNamespaceId(), c.numShards)
 	op := func(ctx context.Context, client WorkerServiceClient) error {
 		var err error
 		ctx, cancel := context.WithTimeout(ctx, history.DefaultTimeout)

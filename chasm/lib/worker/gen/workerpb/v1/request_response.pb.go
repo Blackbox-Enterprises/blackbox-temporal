@@ -11,10 +11,9 @@ import (
 	sync "sync"
 	unsafe "unsafe"
 
-	v1 "go.temporal.io/api/worker/v1"
+	v1 "go.temporal.io/api/workflowservice/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
-	durationpb "google.golang.org/protobuf/types/known/durationpb"
 )
 
 const (
@@ -27,14 +26,10 @@ const (
 type RecordHeartbeatRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Internal namespace ID (UUID).
-	NamespaceId string `protobuf:"bytes,1,opt,name=namespace_id,json=namespaceId,proto3" json:"namespace_id,omitempty"`
-	// Worker heartbeat information including metadata and capabilities.
-	WorkerHeartbeat *v1.WorkerHeartbeat `protobuf:"bytes,2,opt,name=worker_heartbeat,json=workerHeartbeat,proto3" json:"worker_heartbeat,omitempty"`
-	// Duration for which the worker lease should be valid.
-	// Server will calculate the actual expiration time based on when it receives this request.
-	LeaseDuration *durationpb.Duration `protobuf:"bytes,3,opt,name=lease_duration,json=leaseDuration,proto3" json:"lease_duration,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	NamespaceId     string                           `protobuf:"bytes,1,opt,name=namespace_id,json=namespaceId,proto3" json:"namespace_id,omitempty"`
+	FrontendRequest *v1.RecordWorkerHeartbeatRequest `protobuf:"bytes,2,opt,name=frontend_request,json=frontendRequest,proto3" json:"frontend_request,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *RecordHeartbeatRequest) Reset() {
@@ -74,24 +69,18 @@ func (x *RecordHeartbeatRequest) GetNamespaceId() string {
 	return ""
 }
 
-func (x *RecordHeartbeatRequest) GetWorkerHeartbeat() *v1.WorkerHeartbeat {
+func (x *RecordHeartbeatRequest) GetFrontendRequest() *v1.RecordWorkerHeartbeatRequest {
 	if x != nil {
-		return x.WorkerHeartbeat
-	}
-	return nil
-}
-
-func (x *RecordHeartbeatRequest) GetLeaseDuration() *durationpb.Duration {
-	if x != nil {
-		return x.LeaseDuration
+		return x.FrontendRequest
 	}
 	return nil
 }
 
 type RecordHeartbeatResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state            protoimpl.MessageState            `protogen:"open.v1"`
+	FrontendResponse *v1.RecordWorkerHeartbeatResponse `protobuf:"bytes,1,opt,name=frontend_response,json=frontendResponse,proto3" json:"frontend_response,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *RecordHeartbeatResponse) Reset() {
@@ -124,16 +113,23 @@ func (*RecordHeartbeatResponse) Descriptor() ([]byte, []int) {
 	return file_temporal_server_chasm_lib_worker_proto_v1_request_response_proto_rawDescGZIP(), []int{1}
 }
 
+func (x *RecordHeartbeatResponse) GetFrontendResponse() *v1.RecordWorkerHeartbeatResponse {
+	if x != nil {
+		return x.FrontendResponse
+	}
+	return nil
+}
+
 var File_temporal_server_chasm_lib_worker_proto_v1_request_response_proto protoreflect.FileDescriptor
 
 const file_temporal_server_chasm_lib_worker_proto_v1_request_response_proto_rawDesc = "" +
 	"\n" +
-	"@temporal/server/chasm/lib/worker/proto/v1/request_response.proto\x12)temporal.server.chasm.lib.worker.proto.v1\x1a\x1egoogle/protobuf/duration.proto\x1a$temporal/api/worker/v1/message.proto\"\xd1\x01\n" +
+	"@temporal/server/chasm/lib/worker/proto/v1/request_response.proto\x12)temporal.server.chasm.lib.worker.proto.v1\x1a6temporal/api/workflowservice/v1/request_response.proto\"\xa5\x01\n" +
 	"\x16RecordHeartbeatRequest\x12!\n" +
-	"\fnamespace_id\x18\x01 \x01(\tR\vnamespaceId\x12R\n" +
-	"\x10worker_heartbeat\x18\x02 \x01(\v2'.temporal.api.worker.v1.WorkerHeartbeatR\x0fworkerHeartbeat\x12@\n" +
-	"\x0elease_duration\x18\x03 \x01(\v2\x19.google.protobuf.DurationR\rleaseDuration\"\x19\n" +
-	"\x17RecordHeartbeatResponseB>Z<go.temporal.io/server/chasm/lib/worker/gen/workerpb;workerpbb\x06proto3"
+	"\fnamespace_id\x18\x01 \x01(\tR\vnamespaceId\x12h\n" +
+	"\x10frontend_request\x18\x02 \x01(\v2=.temporal.api.workflowservice.v1.RecordWorkerHeartbeatRequestR\x0ffrontendRequest\"\x86\x01\n" +
+	"\x17RecordHeartbeatResponse\x12k\n" +
+	"\x11frontend_response\x18\x01 \x01(\v2>.temporal.api.workflowservice.v1.RecordWorkerHeartbeatResponseR\x10frontendResponseB>Z<go.temporal.io/server/chasm/lib/worker/gen/workerpb;workerpbb\x06proto3"
 
 var (
 	file_temporal_server_chasm_lib_worker_proto_v1_request_response_proto_rawDescOnce sync.Once
@@ -149,14 +145,14 @@ func file_temporal_server_chasm_lib_worker_proto_v1_request_response_proto_rawDe
 
 var file_temporal_server_chasm_lib_worker_proto_v1_request_response_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_temporal_server_chasm_lib_worker_proto_v1_request_response_proto_goTypes = []any{
-	(*RecordHeartbeatRequest)(nil),  // 0: temporal.server.chasm.lib.worker.proto.v1.RecordHeartbeatRequest
-	(*RecordHeartbeatResponse)(nil), // 1: temporal.server.chasm.lib.worker.proto.v1.RecordHeartbeatResponse
-	(*v1.WorkerHeartbeat)(nil),      // 2: temporal.api.worker.v1.WorkerHeartbeat
-	(*durationpb.Duration)(nil),     // 3: google.protobuf.Duration
+	(*RecordHeartbeatRequest)(nil),           // 0: temporal.server.chasm.lib.worker.proto.v1.RecordHeartbeatRequest
+	(*RecordHeartbeatResponse)(nil),          // 1: temporal.server.chasm.lib.worker.proto.v1.RecordHeartbeatResponse
+	(*v1.RecordWorkerHeartbeatRequest)(nil),  // 2: temporal.api.workflowservice.v1.RecordWorkerHeartbeatRequest
+	(*v1.RecordWorkerHeartbeatResponse)(nil), // 3: temporal.api.workflowservice.v1.RecordWorkerHeartbeatResponse
 }
 var file_temporal_server_chasm_lib_worker_proto_v1_request_response_proto_depIdxs = []int32{
-	2, // 0: temporal.server.chasm.lib.worker.proto.v1.RecordHeartbeatRequest.worker_heartbeat:type_name -> temporal.api.worker.v1.WorkerHeartbeat
-	3, // 1: temporal.server.chasm.lib.worker.proto.v1.RecordHeartbeatRequest.lease_duration:type_name -> google.protobuf.Duration
+	2, // 0: temporal.server.chasm.lib.worker.proto.v1.RecordHeartbeatRequest.frontend_request:type_name -> temporal.api.workflowservice.v1.RecordWorkerHeartbeatRequest
+	3, // 1: temporal.server.chasm.lib.worker.proto.v1.RecordHeartbeatResponse.frontend_response:type_name -> temporal.api.workflowservice.v1.RecordWorkerHeartbeatResponse
 	2, // [2:2] is the sub-list for method output_type
 	2, // [2:2] is the sub-list for method input_type
 	2, // [2:2] is the sub-list for extension type_name
