@@ -310,6 +310,18 @@ func (tv *TestVars) WithTaskQueue(taskQueue string) *TestVars {
 	return tv.cloneSetVal("task_queue", taskQueue)
 }
 
+func (tv *TestVars) WithDeploymentSeries(deploymentSeries string) *TestVars {
+	return tv.cloneSetVal("deployment_series", deploymentSeries)
+}
+
+func (tv *TestVars) WithBuildID(buildID string) *TestVars {
+	return tv.cloneSetVal("build_id", buildID)
+}
+
+func (tv *TestVars) WithWorkflowID(workflowID string) *TestVars {
+	return tv.cloneSetVal("workflow_id", workflowID)
+}
+
 func (tv *TestVars) WithTaskQueueNumber(n int) *TestVars {
 	return tv.cloneSetN("task_queue", n)
 }
